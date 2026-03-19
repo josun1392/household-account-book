@@ -1,0 +1,269 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>가계부</title>
+  <link rel="icon" href="./household_budget_icon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="sync-status-banner sync-status-online hidden" id="syncStatusBanner" role="status" aria-live="polite">온라인 상태</div>
+  <div class="app-message hidden" id="appMessage" role="alert" aria-live="polite"></div>
+  <div class="auth-gate hidden" id="authGate">
+    <div class="auth-gate-card">
+      <p class="eyebrow">계정</p>
+      <h2>로그인이 필요합니다</h2>
+      <p class="hero-copy">Google 계정으로 로그인하면 거래 내역을 저장하고 불러올 수 있습니다.</p>
+      <button type="button" class="submit-button auth-gate-button" id="authGateSignInButton">Google 로그인</button>
+    </div>
+  </div>
+
+  <main class="app-shell">
+    <div class="app-header">
+      <div class="auth-bar hidden" id="authBar">
+        <span class="list-note" id="authStatusText">로그인이 필요합니다</span>
+        <button type="button" class="secondary-button hidden" id="signOutButton">로그아웃</button>
+      </div>
+    </div>
+
+    <section class="hero card">
+      <div>
+        <p class="eyebrow">개인 재무</p>
+        <h1>가계부</h1>
+        <p class="hero-copy">브라우저에서 로컬 수입과 지출을 관리하세요. 데이터는 Firebase에 저장되며 오프라인 상태에서도 변경 사항이 기기에 임시 저장됩니다.</p>
+
+        <div class="period-selector">
+          <div class="period-selector-bar">
+            <div class="period-current">
+              <span class="period-current-label">선택 기간</span>
+              <strong id="selectedPeriodLabel">전체 기간</strong>
+            </div>
+            <button type="button" class="period-toggle-button" id="periodToggleButton" aria-expanded="false" aria-controls="periodSelectionPanel">
+              기간 선택
+            </button>
+          </div>
+
+          <div class="period-selection-panel hidden" id="periodSelectionPanel">
+            <div class="period-shortcuts">
+              <button type="button" class="period-option-button" id="allTimeButton" data-period-value="all">전체 기간</button>
+              <button type="button" class="period-option-button" id="thisMonthButton">이번 달</button>
+            </div>
+
+            <div class="period-months">
+              <div class="period-year-nav">
+                <button type="button" class="period-year-button" id="prevYearButton" aria-label="이전 연도">이전</button>
+                <strong class="period-year-value" id="periodPanelYearLabel">2026년</strong>
+                <button type="button" class="period-year-button" id="nextYearButton" aria-label="다음 연도">다음</button>
+              </div>
+              <div class="period-panel-heading">
+                <span>월 선택</span>
+              </div>
+              <div class="period-month-grid" id="periodMonthGrid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-grid" id="summary">
+        <article class="summary-card summary-card-income summary-card-button" data-summary-type="income" tabindex="0" role="button">
+          <span>총수입</span>
+          <strong id="totalIncome">-</strong>
+        </article>
+        <article class="summary-card summary-card-fixed summary-card-button" data-summary-type="fixedIncome" tabindex="0" role="button">
+          <span>총고정수입</span>
+          <strong id="totalFixedIncome">-</strong>
+        </article>
+        <article class="summary-card summary-card-expense summary-card-button" data-summary-type="expense" tabindex="0" role="button">
+          <span>총지출</span>
+          <strong id="totalExpense">-</strong>
+          <small class="summary-meta" id="fixedExpenseRatio">고정비 비율: -</small>
+        </article>
+        <article class="summary-card summary-card-balance summary-card-button" data-summary-type="balance" tabindex="0" role="button">
+          <span>잔액</span>
+          <strong id="balance">-</strong>
+        </article>
+        <article class="summary-card summary-card-fixed summary-card-button" data-summary-type="fixedExpense" tabindex="0" role="button">
+          <span>총고정지출</span>
+          <strong id="totalFixedExpense">-</strong>
+        </article>
+        <article class="summary-card summary-card-variable summary-card-button" data-summary-type="variableExpense" tabindex="0" role="button">
+          <span>총변동지출</span>
+          <strong id="totalVariableExpense">-</strong>
+        </article>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow" id="formEyebrow">내역 추가</p>
+          <h2>거래 입력</h2>
+        </div>
+        <p class="form-status hidden" id="formStatus">거래 수정 중</p>
+      </div>
+
+      <form id="transactionForm" class="transaction-form">
+        <label>
+          <span>날짜</span>
+          <div class="date-input-row">
+            <input type="date" id="date" name="date" required>
+            <button type="button" class="secondary-button today-button" id="todayButton">오늘</button>
+          </div>
+        </label>
+
+        <label>
+          <span>유형</span>
+          <select id="type" name="type" required>
+            <option value="expense">지출</option>
+            <option value="income">수입</option>
+          </select>
+        </label>
+
+        <label>
+          <span>금액</span>
+          <input type="text" id="amount" name="amount" inputmode="numeric" autocomplete="off" placeholder="0" required>
+        </label>
+
+        <label>
+          <span>카테고리</span>
+          <select id="category" name="category" required></select>
+        </label>
+
+        <label class="memo-field">
+          <span>메모</span>
+          <input type="text" id="memo" name="memo" maxlength="120" placeholder="선택 입력">
+        </label>
+
+        <label class="checkbox-field">
+          <input type="checkbox" id="isFixed" name="isFixed">
+          <span>고정 항목</span>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" class="submit-button" id="submitButton">거래 추가</button>
+          <button type="button" class="secondary-button hidden" id="cancelEditButton">수정 취소</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">통계</p>
+          <h2>카테고리 통계</h2>
+        </div>
+        <label class="statistics-filter">
+          <span>유형</span>
+          <select id="statisticsType">
+            <option value="expense">지출</option>
+            <option value="income">수입</option>
+            <option value="all" selected>전체</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="statistics-layout">
+        <div class="chart-panel">
+          <div class="pie-chart" id="pieChart" aria-label="카테고리 유형 차트" role="img"></div>
+          <div class="chart-center">
+            <span id="chartTitle">지출</span>
+            <strong id="chartTotal">-</strong>
+          </div>
+        </div>
+
+        <div class="statistics-details">
+          <p class="statistics-empty" id="statisticsEmpty">선택한 유형에 대한 데이터가 아직 없습니다.</p>
+          <ul class="statistics-list hidden" id="statisticsList"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">내역</p>
+          <h2>거래 목록</h2>
+        </div>
+        <div class="history-controls">
+          <select id="monthFilter" class="month-filter-native" aria-hidden="true" tabindex="-1">
+            <option value="all">전체 기간</option>
+          </select>
+          <p class="list-note" id="transactionCount">0건</p>
+        </div>
+      </div>
+
+      <label class="statistics-filter">
+        <span>유형</span>
+        <select id="transactionTypeFilter">
+          <option value="all" selected>전체</option>
+          <option value="income">수입</option>
+          <option value="expense">지출</option>
+        </select>
+      </label>
+
+      <label class="statistics-filter">
+        <span>정렬</span>
+        <select id="transactionSort">
+          <option value="latest" selected>최신순</option>
+          <option value="oldest">오래된순</option>
+          <option value="amountDesc">금액 큰순</option>
+          <option value="amountAsc">금액 작은순</option>
+        </select>
+      </label>
+
+      <label class="statistics-filter">
+        <span>검색</span>
+        <input type="text" id="transactionSearch" placeholder="거래 검색" autocomplete="off">
+      </label>
+
+      <div class="export-actions">
+        <button type="button" class="secondary-button" id="exportCsvButton">Export CSV</button>
+        <button type="button" class="secondary-button" id="exportJsonButton">Export JSON</button>
+      </div>
+
+      <div id="emptyState" class="empty-state">
+        <p>거래 내역이 아직 없습니다. 위에서 첫 수입 또는 지출을 추가해 보세요.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table class="transaction-table">
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>유형</th>
+              <th>카테고리</th>
+              <th>고정 여부</th>
+              <th>금액</th>
+              <th>메모</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="transactionList"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay hidden" id="summaryModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">상세 보기</p>
+          <h2 id="modalTitle">요약 상세</h2>
+        </div>
+        <button type="button" class="modal-close-button" id="modalCloseButton" aria-label="닫기">닫기</button>
+      </div>
+
+      <div class="modal-body" id="modalBody"></div>
+
+      <div class="modal-footer">
+        <span class="modal-total-label">합계</span>
+        <strong class="modal-total-value" id="modalTotal">-</strong>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
