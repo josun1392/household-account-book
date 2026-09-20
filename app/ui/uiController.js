@@ -63,7 +63,7 @@ export function createUiController({ budgetAPI }) {
     dom.recurringModal.addEventListener("click", (event) => { if (event.target === dom.recurringModal) closeRecurringModal(); });
     dom.recurringItemForm.addEventListener("submit", handleRecurringSubmit);
     dom.recurringCancelEditButton.addEventListener("click", resetRecurringForm);
-    dom.recurringType.addEventListener("change", () => updateRecurringCategoryOptions(dom.recurringType.value));
+    dom.recurringType.addEventListener("change", () => { updateRecurringCategoryOptions(dom.recurringType.value); syncRecurringSavingsOptionVisibility(); });
     dom.recurringKind.addEventListener("change", () => { if (dom.recurringKind.value === "subscription" && dom.recurringType.value === "expense") dom.recurringCategory.value = "구독"; });
     dom.recurringAmount.addEventListener("input", handleAmountInput);
     dom.recurringItemList.addEventListener("click", handleRecurringListClick);
@@ -379,8 +379,9 @@ export function createUiController({ budgetAPI }) {
     uiState.editingRecurringItemId = null; dom.recurringItemForm.reset();
     dom.recurringType.value = "expense"; dom.recurringKind.value = "fixed";
     dom.recurringDayOfMonth.value = String(new Date().getDate()); dom.recurringStartDate.value = getTodayString();
-    dom.recurringIsActive.checked = true; dom.recurringSubmitButton.textContent = "고정 항목 추가";
+    dom.recurringIsActive.checked = true; dom.recurringRecordClassSavings.checked = false; dom.recurringSubmitButton.textContent = "고정 항목 추가";
     dom.recurringCancelEditButton.classList.add("hidden"); updateRecurringCategoryOptions("expense");
+    syncRecurringSavingsOptionVisibility();
   }
 
   function updateRecurringCategoryOptions(type, selected = "") {
@@ -390,7 +391,7 @@ export function createUiController({ budgetAPI }) {
 
   async function handleRecurringSubmit(event) {
     event.preventDefault();
-    const data = { name: dom.recurringName.value, type: dom.recurringType.value, amount: parseAmountInputValue(dom.recurringAmount.value), category: dom.recurringCategory.value, memo: dom.recurringMemo.value, kind: dom.recurringKind.value, dayOfMonth: Number(dom.recurringDayOfMonth.value), startDate: dom.recurringStartDate.value, isActive: dom.recurringIsActive.checked };
+    const data = { name: dom.recurringName.value, type: dom.recurringType.value, amount: parseAmountInputValue(dom.recurringAmount.value), category: dom.recurringCategory.value, memo: dom.recurringMemo.value, kind: dom.recurringKind.value, dayOfMonth: Number(dom.recurringDayOfMonth.value), startDate: dom.recurringStartDate.value, recordClass: dom.recurringRecordClassSavings.checked ? "savings" : "normal", isActive: dom.recurringIsActive.checked };
     const result = uiState.editingRecurringItemId ? await budgetAPI.updateRecurringItem(uiState.editingRecurringItemId, data) : await budgetAPI.createRecurringItem(data);
     if (!result.ok) { showMessage(result.reason ?? "고정 항목 저장에 실패했습니다", "error"); return; }
     resetRecurringForm(); renderRecurringItems(); showMessage("고정 항목이 저장되었습니다", "success");
@@ -400,7 +401,7 @@ export function createUiController({ budgetAPI }) {
     const button = event.target.closest("[data-recurring-action]"); if (!button) return;
     const item = uiState.currentSnapshot.recurringItems.find((current) => current.id === button.dataset.recurringId); if (!item) return;
     if (button.dataset.recurringAction === "edit") {
-      uiState.editingRecurringItemId = item.id; dom.recurringName.value = item.name; dom.recurringType.value = item.type; updateRecurringCategoryOptions(item.type, item.category); dom.recurringAmount.value = formatNumberWithCommas(item.amount); dom.recurringKind.value = item.kind; dom.recurringDayOfMonth.value = item.dayOfMonth; dom.recurringStartDate.value = item.startDate; dom.recurringMemo.value = item.memo ?? ""; dom.recurringIsActive.checked = item.isActive !== false; dom.recurringSubmitButton.textContent = "고정 항목 수정"; dom.recurringCancelEditButton.classList.remove("hidden"); return;
+      uiState.editingRecurringItemId = item.id; dom.recurringName.value = item.name; dom.recurringType.value = item.type; updateRecurringCategoryOptions(item.type, item.category); dom.recurringAmount.value = formatNumberWithCommas(item.amount); dom.recurringKind.value = item.kind; dom.recurringDayOfMonth.value = item.dayOfMonth; dom.recurringStartDate.value = item.startDate; dom.recurringMemo.value = item.memo ?? ""; dom.recurringRecordClassSavings.checked = item.recordClass === "savings"; dom.recurringIsActive.checked = item.isActive !== false; syncRecurringSavingsOptionVisibility(); dom.recurringSubmitButton.textContent = "고정 항목 수정"; dom.recurringCancelEditButton.classList.remove("hidden"); return;
     }
     if (button.dataset.recurringAction === "toggle") {
       budgetAPI.updateRecurringItem(item.id, { isActive: !item.isActive }).then((result) => { if (!result.ok) showMessage(result.reason ?? "상태 변경에 실패했습니다", "error"); }); return;
@@ -413,6 +414,13 @@ export function createUiController({ budgetAPI }) {
   function renderRecurringItems() {
     const items = uiState.currentSnapshot.recurringItems ?? [];
     dom.recurringItemList.innerHTML = items.length ? items.map((item) => `<article class="recurring-item-card ${item.isActive === false ? "is-paused" : ""}"><div><strong>${escapeHtml(item.name)}</strong><span>${item.type === "income" ? "수입" : "지출"} · ${item.kind === "subscription" ? "구독" : "고정"} · 매월 ${item.dayOfMonth}일</span></div><div class="recurring-item-meta"><b>${formatAmount(item.amount)}</b><span>${item.isActive === false ? "일시 중지" : "활성"}</span></div><div class="recurring-item-actions"><button type="button" class="secondary-button" data-recurring-action="edit" data-recurring-id="${item.id}">수정</button><button type="button" class="secondary-button" data-recurring-action="toggle" data-recurring-id="${item.id}">${item.isActive === false ? "재개" : "일시 중지"}</button><button type="button" class="delete-button" data-recurring-action="delete" data-recurring-id="${item.id}">삭제</button></div></article>`).join("") : "<p class=\"modal-empty\">등록된 고정 항목이 없습니다.</p>";
+  }
+
+  function syncRecurringSavingsOptionVisibility() {
+    const visible = dom.recurringType.value === "expense";
+    dom.recurringRecordClassSavingsField.classList.toggle("hidden", !visible);
+    dom.recurringRecordClassSavings.disabled = !visible;
+    if (!visible) dom.recurringRecordClassSavings.checked = false;
   }
 
   function stageDelete(id) {
@@ -940,6 +948,8 @@ function getDomRefs() {
     recurringDayOfMonth: document.getElementById("recurringDayOfMonth"),
     recurringStartDate: document.getElementById("recurringStartDate"),
     recurringMemo: document.getElementById("recurringMemo"),
+    recurringRecordClassSavingsField: document.getElementById("recurringRecordClassSavingsField"),
+    recurringRecordClassSavings: document.getElementById("recurringRecordClassSavings"),
     recurringIsActive: document.getElementById("recurringIsActive"),
     recurringSubmitButton: document.getElementById("recurringSubmitButton"),
     recurringCancelEditButton: document.getElementById("recurringCancelEditButton"),
