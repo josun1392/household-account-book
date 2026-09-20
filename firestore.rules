@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /transactions/{transactionId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /recurringItems/{recurringItemId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /recurringOccurrenceSkips/{skipId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}
