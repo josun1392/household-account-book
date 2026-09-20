@@ -4,6 +4,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, runTransacti
 const USERS_COLLECTION = "users";
 const TRANSACTIONS_COLLECTION = "transactions";
 const RECURRING_ITEMS_COLLECTION = "recurringItems";
+const RECURRING_OCCURRENCE_SKIPS_COLLECTION = "recurringOccurrenceSkips";
 const LEGACY_TRANSACTIONS_STORAGE_KEY = "household-account-book-transactions";
 const MIGRATION_COMPLETED_KEY = "household-account-book-migration-completed";
 const OFFLINE_QUEUE_KEY = "household-account-book-offline-queue";
@@ -246,6 +247,20 @@ function getUserRecurringItemsCollection(uid = getCurrentUserId()) {
 
 function getUserRecurringItemDocRef(recurringItemId, uid = getCurrentUserId()) {
   return doc(db, USERS_COLLECTION, uid, RECURRING_ITEMS_COLLECTION, recurringItemId);
+}
+
+function getUserRecurringOccurrenceSkipsCollection(uid = getCurrentUserId()) {
+  return collection(db, USERS_COLLECTION, uid, RECURRING_OCCURRENCE_SKIPS_COLLECTION);
+}
+
+function getUserRecurringOccurrenceSkipDocRef(recurringItemId, occurrenceKey, uid = getCurrentUserId()) {
+  return doc(
+    db,
+    USERS_COLLECTION,
+    uid,
+    RECURRING_OCCURRENCE_SKIPS_COLLECTION,
+    getRecurringOccurrenceSkipId(recurringItemId, occurrenceKey),
+  );
 }
 
 function getMigrationCompletedKey() {
@@ -1107,14 +1122,19 @@ async function handleTransactionAction(event) {
     return;
   }
 
-  const shouldDelete = window.confirm("이 거래를 삭제하시겠습니까?");
-  if (!shouldDelete) {
-    return;
-  }
-
   const { deleteId } = deleteButton.dataset;
   const transactionToDelete = transactions.find((transaction) => transaction.id === deleteId);
   if (!transactionToDelete) {
+    return;
+  }
+
+  if (!navigator.onLine && isGeneratedRecurringTransaction(transactionToDelete)) {
+    showError("자동 생성된 반복 거래는 온라인에서만 삭제할 수 있습니다");
+    return;
+  }
+
+  const shouldDelete = window.confirm("이 거래를 삭제하시겠습니까?");
+  if (!shouldDelete) {
     return;
   }
 
@@ -1274,7 +1294,7 @@ function hideMessage() {
 }
 
 function showUndoDeleteMessage() {
-  showMessage("삭제되었습니다", "success", {
+  showMessage("삭제 예정입니다", "success", {
     actionLabel: "되돌리기",
     actionName: "undo-delete",
   });
@@ -1290,6 +1310,15 @@ async function finalizePendingDelete() {
   clearTimeout(timerId);
 
   if (!navigator.onLine) {
+    if (isGeneratedRecurringTransaction(transaction)) {
+      transactions.push(transaction);
+      syncMonthFilterOptions();
+      render();
+      hideMessage();
+      showError("자동 생성된 반복 거래는 온라인에서만 삭제할 수 있습니다");
+      return;
+    }
+
     queueOfflineMutation({ type: "delete", transactionId: transaction.id, userId: getCurrentUserId() });
     updateSyncStatus("offline");
     hideMessage();
@@ -1298,7 +1327,11 @@ async function finalizePendingDelete() {
   }
 
   try {
-    await deleteDoc(getUserTransactionDocRef(transaction.id));
+    if (isGeneratedRecurringTransaction(transaction)) {
+      await deleteGeneratedRecurringTransactionWithSkip(transaction);
+    } else {
+      await deleteDoc(getUserTransactionDocRef(transaction.id));
+    }
     hideMessage();
     showSuccess("삭제되었습니다");
   } catch (error) {
@@ -1309,6 +1342,32 @@ async function finalizePendingDelete() {
     showError("삭제에 실패했습니다");
     console.error("Firestore에서 거래 데이터를 삭제하지 못했습니다.", error);
   }
+}
+
+async function deleteGeneratedRecurringTransactionWithSkip(transaction) {
+  const skipRef = getUserRecurringOccurrenceSkipDocRef(
+    transaction.recurringItemId,
+    transaction.occurrenceKey,
+  );
+  const transactionRef = getUserTransactionDocRef(transaction.id);
+  const skippedAt = new Date().toISOString();
+
+  await runTransaction(db, async (firestoreTransaction) => {
+    firestoreTransaction.set(skipRef, {
+      recurringItemId: transaction.recurringItemId,
+      occurrenceKey: transaction.occurrenceKey,
+      skippedAt,
+    });
+    firestoreTransaction.delete(transactionRef);
+  });
+}
+
+function isGeneratedRecurringTransaction(transaction) {
+  return (
+    transaction?.source === "recurringItem" &&
+    typeof transaction.recurringItemId === "string" &&
+    typeof transaction.occurrenceKey === "string"
+  );
 }
 
 function undoPendingDelete() {
@@ -1483,6 +1542,7 @@ async function materializeDueRecurringOccurrences() {
 async function createRecurringOccurrenceIfMissing(recurringItem, occurrence) {
   const transactionId = getRecurringOccurrenceTransactionId(recurringItem.id, occurrence.occurrenceKey);
   const transactionRef = getUserTransactionDocRef(transactionId);
+  const skipRef = getUserRecurringOccurrenceSkipDocRef(recurringItem.id, occurrence.occurrenceKey);
   const transaction = {
     id: transactionId,
     clientId: transactionId,
@@ -1500,7 +1560,8 @@ async function createRecurringOccurrenceIfMissing(recurringItem, occurrence) {
 
   return runTransaction(db, async (firestoreTransaction) => {
     const existingDocument = await firestoreTransaction.get(transactionRef);
-    if (existingDocument.exists()) {
+    const skipDocument = await firestoreTransaction.get(skipRef);
+    if (existingDocument.exists() || skipDocument.exists()) {
       return false;
     }
 
@@ -1569,6 +1630,10 @@ function getRecurringOccurrenceIdentity(recurringItemId, occurrenceKey) {
 
 function getRecurringOccurrenceTransactionId(recurringItemId, occurrenceKey) {
   return `recurring-${recurringItemId}-${occurrenceKey}`;
+}
+
+function getRecurringOccurrenceSkipId(recurringItemId, occurrenceKey) {
+  return `recurring-skip-${recurringItemId}-${occurrenceKey}`;
 }
 
 function loadLegacyTransactionsFromLocalStorage() {
