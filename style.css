@@ -21,7 +21,7 @@
    same card/modal language as the production UI. */
 .section-heading-actions { display: flex; align-items: center; gap: 12px; }
 .recurring-modal-card { width: min(720px, calc(100vw - 28px)); max-height: min(860px, calc(100vh - 28px)); grid-template-rows: auto minmax(0, 1fr); }
-.recurring-modal-body { min-height: 0; overflow: auto; padding: 20px 24px 24px; }
+.recurring-modal-body { min-width: 0; max-width: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 20px 24px 24px; }
 .recurring-item-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .recurring-item-form label { display: grid; gap: 7px; color: var(--muted); font-size: .9rem; }
 .recurring-item-form input:not([type="checkbox"]), .recurring-item-form select { width: 100%; min-height: 44px; padding: 10px 12px; font: inherit; color: var(--text); background: var(--surface-strong); border: 1px solid var(--border); border-radius: var(--radius-sm); }
