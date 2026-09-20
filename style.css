@@ -20,19 +20,23 @@
 /* Canonical recurring-item management stays a secondary control and uses the
    same card/modal language as the production UI. */
 .section-heading-actions { display: flex; align-items: center; gap: 12px; }
-.recurring-modal-card { width: min(720px, calc(100vw - 28px)); max-height: min(860px, calc(100vh - 28px)); overflow: auto; }
+.recurring-modal-card { width: min(720px, calc(100vw - 28px)); max-height: min(860px, calc(100vh - 28px)); grid-template-rows: auto minmax(0, 1fr); }
+.recurring-modal-body { min-height: 0; overflow: auto; padding: 20px 24px 24px; }
 .recurring-item-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .recurring-item-form label { display: grid; gap: 7px; color: var(--muted); font-size: .9rem; }
-.recurring-item-form .memo-field, .recurring-item-form .form-actions { grid-column: 1 / -1; }
-.recurring-item-form .recurring-active-field { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
-.recurring-history-note { margin: 20px 0 12px; color: var(--muted); font-size: .86rem; }
+.recurring-item-form input:not([type="checkbox"]), .recurring-item-form select { width: 100%; min-height: 44px; padding: 10px 12px; font: inherit; color: var(--text); background: var(--surface-strong); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.recurring-item-form .memo-field, .recurring-item-form .form-actions, .recurring-item-form .recurring-record-class-field, .recurring-item-form .recurring-active-field { grid-column: 1 / -1; }
+.recurring-item-form .recurring-record-class-field, .recurring-item-form .recurring-active-field { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(255,255,255,.55); }
+.recurring-history-note { margin: 24px 0 12px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: .86rem; }
 .recurring-item-list { display: grid; gap: 10px; }
-.recurring-item-card { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; }
+.recurring-item-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; padding: 16px; background: rgba(255,255,255,.62); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .recurring-item-card strong, .recurring-item-card span { display: block; }
 .recurring-item-card span { color: var(--muted); font-size: .85rem; margin-top: 3px; }
 .recurring-item-card.is-paused { opacity: .62; }
 .recurring-item-meta { text-align: right; }
-.recurring-item-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.recurring-item-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
+.recurring-item-actions button { min-height: 36px; }
+.recurring-savings-badge { display: inline-flex; width: fit-content; margin-top: 6px; padding: 3px 7px; color: #226b4b !important; background: rgba(79,143,104,.13); border-radius: 999px; font-weight: 700; }
 @media (max-width: 640px) {
   .section-heading { align-items: flex-start; }
   .section-heading-actions { align-items: flex-end; flex-direction: column; }
@@ -40,6 +44,8 @@
   .recurring-item-form .memo-field, .recurring-item-form .form-actions, .recurring-item-form .recurring-active-field { grid-column: auto; }
   .recurring-item-card { grid-template-columns: 1fr; }
   .recurring-item-meta { text-align: left; }
+  .recurring-modal-card { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
+  .recurring-modal-body { padding: 16px; }
 }
 
 * {
