@@ -208,7 +208,7 @@ export function listRecentTransactions(transactions, limit = 10, filter = {}) {
 
 export function getRecurringTemplates(transactions) {
   return transactions.filter((transaction) =>
-    transaction.isFixed && !transaction.generatedMonth && transaction.source !== "recurringItem");
+    transaction.isFixed && !transaction.generatedMonth && transaction.source !== "recurringItem" && !transaction.recurrenceMigrated);
 }
 
 export function getRecurringMonthKeysToCreate(transactions, template, currentMonth) {
