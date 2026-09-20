@@ -3,6 +3,7 @@ import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signO
 import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const USERS_COLLECTION = "users";
 const TRANSACTIONS_COLLECTION = "transactions";
+const RECURRING_ITEMS_COLLECTION = "recurringItems";
 const LEGACY_TRANSACTIONS_STORAGE_KEY = "household-account-book-transactions";
 const MIGRATION_COMPLETED_KEY = "household-account-book-migration-completed";
 const OFFLINE_QUEUE_KEY = "household-account-book-offline-queue";
@@ -102,9 +103,29 @@ const authBar = document.getElementById("authBar");
 const authGateSignInButton = document.getElementById("authGateSignInButton");
 const authStatusText = document.getElementById("authStatusText");
 const signOutButton = document.getElementById("signOutButton");
+const recurringItemsButton = document.getElementById("recurringItemsButton");
+const recurringItemsModal = document.getElementById("recurringItemsModal");
+const recurringModalCloseButton = document.getElementById("recurringModalCloseButton");
+const recurringItemForm = document.getElementById("recurringItemForm");
+const recurringFormTitle = document.getElementById("recurringFormTitle");
+const recurringNameInput = document.getElementById("recurringName");
+const recurringTypeInput = document.getElementById("recurringType");
+const recurringAmountInput = document.getElementById("recurringAmount");
+const recurringCategoryInput = document.getElementById("recurringCategory");
+const recurringKindInput = document.getElementById("recurringKind");
+const recurringDayOfMonthInput = document.getElementById("recurringDayOfMonth");
+const recurringStartDateInput = document.getElementById("recurringStartDate");
+const recurringMemoInput = document.getElementById("recurringMemo");
+const recurringIsActiveInput = document.getElementById("recurringIsActive");
+const recurringSubmitButton = document.getElementById("recurringSubmitButton");
+const cancelRecurringEditButton = document.getElementById("cancelRecurringEditButton");
+const recurringItemsList = document.getElementById("recurringItemsList");
+const recurringItemCount = document.getElementById("recurringItemCount");
 
 let transactions = [];
+let recurringItems = [];
 let editingTransactionId = null;
+let editingRecurringItemId = null;
 let isSyncingOfflineTransactions = false;
 let messageTimeoutId = null;
 let syncStatusTimeoutId = null;
@@ -136,6 +157,7 @@ async function initializeBudgetApp() {
   setAuthenticatedUIState(true);
   updateSyncStatus();
   await hydrateTransactionsFromFirestore();
+  await hydrateRecurringItemsFromFirestore();
   if (transactions.length === 0) {
     await migrateLegacyLocalStorageToFirestore();
     await hydrateTransactionsFromFirestore();
@@ -173,6 +195,15 @@ function bindEventListeners() {
   prevYearButton.addEventListener("click", () => changePanelYear(-1));
   nextYearButton.addEventListener("click", () => changePanelYear(1));
   periodMonthGrid.addEventListener("click", handlePeriodMonthClick);
+  recurringItemsButton.addEventListener("click", openRecurringItemsModal);
+  recurringModalCloseButton.addEventListener("click", closeRecurringItemsModal);
+  recurringItemsModal.addEventListener("click", handleRecurringModalOverlayClick);
+  recurringItemForm.addEventListener("submit", handleRecurringItemSubmit);
+  recurringTypeInput.addEventListener("change", handleRecurringTypeChange);
+  recurringKindInput.addEventListener("change", handleRecurringKindChange);
+  recurringAmountInput.addEventListener("input", handleAmountInput);
+  cancelRecurringEditButton.addEventListener("click", resetRecurringItemForm);
+  recurringItemsList.addEventListener("click", handleRecurringItemAction);
   transactionList.addEventListener("click", handleTransactionAction);
   appMessage.addEventListener("click", handleAppMessageClick);
   summarySection.addEventListener("click", handleSummaryCardClick);
@@ -202,6 +233,14 @@ function getUserTransactionsCollection(uid = getCurrentUserId()) {
 
 function getUserTransactionDocRef(transactionId, uid = getCurrentUserId()) {
   return doc(db, USERS_COLLECTION, uid, TRANSACTIONS_COLLECTION, transactionId);
+}
+
+function getUserRecurringItemsCollection(uid = getCurrentUserId()) {
+  return collection(db, USERS_COLLECTION, uid, RECURRING_ITEMS_COLLECTION);
+}
+
+function getUserRecurringItemDocRef(recurringItemId, uid = getCurrentUserId()) {
+  return doc(db, USERS_COLLECTION, uid, RECURRING_ITEMS_COLLECTION, recurringItemId);
 }
 
 function getMigrationCompletedKey() {
@@ -248,6 +287,7 @@ function setAuthenticatedUIState(isAuthenticated) {
     thisMonthButton,
     prevYearButton,
     nextYearButton,
+    recurringItemsButton,
   ].forEach((element) => {
     element.disabled = !isAuthenticated;
   });
@@ -264,7 +304,10 @@ function clearPendingDeleteState() {
 
 function resetTransactionsState() {
   transactions = [];
+  recurringItems = [];
   editingTransactionId = null;
+  resetRecurringItemForm();
+  closeRecurringItemsModal();
   currentTypeFilter = "all";
   currentSortOption = "latest";
   clearPendingDeleteState();
@@ -793,11 +836,248 @@ function handleDocumentKeydown(event) {
       return;
     }
 
+    if (!recurringItemsModal.classList.contains("hidden")) {
+      closeRecurringItemsModal();
+      return;
+    }
+
     if (periodState.isPanelOpen) {
       periodState.isPanelOpen = false;
       syncPeriodUI();
     }
   }
+}
+
+function openRecurringItemsModal() {
+  if (!currentUser) {
+    showError("로그인 후 이용해 주세요");
+    return;
+  }
+
+  renderRecurringItems();
+  recurringItemsModal.classList.remove("hidden");
+  recurringItemsModal.setAttribute("aria-hidden", "false");
+}
+
+function closeRecurringItemsModal() {
+  recurringItemsModal.classList.add("hidden");
+  recurringItemsModal.setAttribute("aria-hidden", "true");
+}
+
+function handleRecurringModalOverlayClick(event) {
+  if (event.target === recurringItemsModal) {
+    closeRecurringItemsModal();
+  }
+}
+
+function handleRecurringTypeChange() {
+  updateRecurringCategoryOptions(recurringTypeInput.value);
+}
+
+function handleRecurringKindChange() {
+  if (recurringKindInput.value === "subscription" && recurringTypeInput.value === "expense") {
+    updateRecurringCategoryOptions("expense", "구독");
+  }
+}
+
+function updateRecurringCategoryOptions(type, selectedCategory = "") {
+  const categories = categoriesByType[type] ?? [];
+  const categoryOptions = selectedCategory && !categories.includes(selectedCategory)
+    ? [...categories, selectedCategory]
+    : categories;
+  recurringCategoryInput.innerHTML = categoryOptions
+    .map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
+    .join("");
+  recurringCategoryInput.value = selectedCategory || (recurringKindInput.value === "subscription" && type === "expense" ? "구독" : categoryOptions[0] ?? "");
+}
+
+async function handleRecurringItemSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) {
+    showError("로그인 후 이용해 주세요");
+    return;
+  }
+  if (!navigator.onLine) {
+    showError("고정 항목 관리는 온라인에서만 변경할 수 있습니다");
+    return;
+  }
+
+  const recurringItem = getRecurringItemFromForm();
+  if (!recurringItem) {
+    return;
+  }
+
+  try {
+    if (editingRecurringItemId) {
+      await updateDoc(
+        getUserRecurringItemDocRef(editingRecurringItemId),
+        getFirestoreRecurringItemPayload(recurringItem, false),
+      );
+      recurringItems = recurringItems.map((item) => item.id === editingRecurringItemId
+        ? { ...recurringItem, id: editingRecurringItemId }
+        : item);
+      showSuccess("고정 항목 설정이 수정되었습니다. 기존 거래 내역은 변경되지 않습니다.");
+    } else {
+      const docRef = await addDoc(
+        getUserRecurringItemsCollection(),
+        getFirestoreRecurringItemPayload(recurringItem, true),
+      );
+      recurringItems.push({ ...recurringItem, id: docRef.id });
+      showSuccess("고정 항목 설정이 저장되었습니다");
+    }
+    resetRecurringItemForm();
+    renderRecurringItems();
+  } catch (error) {
+    console.error("Firestore에서 고정 항목 설정을 저장하지 못했습니다.", error);
+    showError("고정 항목 설정 저장에 실패했습니다");
+  }
+}
+
+function getRecurringItemFromForm() {
+  const name = recurringNameInput.value.trim();
+  const amount = parseAmountInputValue(recurringAmountInput.value);
+  const dayOfMonth = Number(recurringDayOfMonthInput.value);
+  const startDate = recurringStartDateInput.value;
+  if (!name) {
+    recurringNameInput.focus();
+    return null;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    recurringAmountInput.focus();
+    return null;
+  }
+  if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
+    recurringDayOfMonthInput.focus();
+    showError("결제 / 발생일은 1일부터 31일 사이여야 합니다");
+    return null;
+  }
+  if (!startDate) {
+    recurringStartDateInput.focus();
+    return null;
+  }
+
+  return {
+    name,
+    type: recurringTypeInput.value,
+    amount,
+    category: recurringCategoryInput.value,
+    memo: recurringMemoInput.value.trim(),
+    recurrence: "monthly",
+    dayOfMonth,
+    isActive: recurringIsActiveInput.checked,
+    kind: recurringKindInput.value,
+    startDate,
+  };
+}
+
+function getFirestoreRecurringItemPayload(item, isNew) {
+  const timestamp = new Date().toISOString();
+  return {
+    ...item,
+    updatedAt: timestamp,
+    ...(isNew ? { createdAt: timestamp } : {}),
+  };
+}
+
+function renderRecurringItems() {
+  recurringItemCount.textContent = `${recurringItems.length}개`;
+  if (recurringItems.length === 0) {
+    recurringItemsList.innerHTML = '<div class="recurring-empty">등록된 고정 항목이 없습니다. 이 설정은 거래 내역을 자동으로 만들지 않습니다.</div>';
+    return;
+  }
+  recurringItemsList.innerHTML = [...recurringItems]
+    .sort((left, right) => left.name.localeCompare(right.name, "ko"))
+    .map((item) => {
+      const kindLabel = item.kind === "subscription" ? "구독" : "일반 고정";
+      const stateLabel = item.isActive ? "활성" : "일시정지";
+      return `
+        <article class="recurring-item-card ${item.isActive ? "" : "is-paused"}">
+          <div class="recurring-item-top">
+            <strong class="recurring-item-name">${escapeHtml(item.name)}</strong>
+            <span class="recurring-state-pill ${item.isActive ? "is-active" : "is-paused"}">${stateLabel}</span>
+          </div>
+          <div class="recurring-item-meta">
+            <span class="type-pill type-pill-${item.type}">${item.type === "income" ? "수입" : "지출"}</span>
+            <span class="recurring-kind-pill">${kindLabel}</span>
+            <span>매월 ${item.dayOfMonth}일</span>
+            <strong class="amount-${item.type}">${item.type === "income" ? "+" : "-"}${formatAmount(item.amount)}</strong>
+          </div>
+          <div class="recurring-item-meta"><span>${escapeHtml(item.category)}</span><span>${item.memo ? escapeHtml(item.memo) : "메모 없음"}</span></div>
+          <div class="recurring-item-actions">
+            <button type="button" class="secondary-button" data-recurring-edit-id="${item.id}">수정</button>
+            <button type="button" class="secondary-button" data-recurring-toggle-id="${item.id}">${item.isActive ? "일시정지" : "재개"}</button>
+            <button type="button" class="delete-button" data-recurring-delete-id="${item.id}">삭제</button>
+          </div>
+        </article>`;
+    }).join("");
+}
+
+async function handleRecurringItemAction(event) {
+  const actionButton = event.target.closest("[data-recurring-edit-id], [data-recurring-toggle-id], [data-recurring-delete-id]");
+  if (!actionButton || !currentUser) return;
+  if (!navigator.onLine) {
+    showError("고정 항목 관리는 온라인에서만 변경할 수 있습니다");
+    return;
+  }
+  if (actionButton.dataset.recurringEditId) {
+    startEditingRecurringItem(actionButton.dataset.recurringEditId);
+    return;
+  }
+  const itemId = actionButton.dataset.recurringToggleId ?? actionButton.dataset.recurringDeleteId;
+  const item = recurringItems.find((currentItem) => currentItem.id === itemId);
+  if (!item) return;
+  try {
+    if (actionButton.dataset.recurringToggleId) {
+      const isActive = !item.isActive;
+      await updateDoc(getUserRecurringItemDocRef(item.id), { isActive, updatedAt: new Date().toISOString() });
+      recurringItems = recurringItems.map((currentItem) => currentItem.id === item.id ? { ...currentItem, isActive } : currentItem);
+      showSuccess(isActive ? "고정 항목이 재개되었습니다" : "고정 항목이 일시정지되었습니다");
+    } else {
+      const shouldDelete = window.confirm(`‘${item.name}’ 설정을 삭제하시겠습니까?\n\n이 설정을 삭제해도 기존 거래 내역은 유지됩니다.`);
+      if (!shouldDelete) return;
+      await deleteDoc(getUserRecurringItemDocRef(item.id));
+      recurringItems = recurringItems.filter((currentItem) => currentItem.id !== item.id);
+      if (editingRecurringItemId === item.id) resetRecurringItemForm();
+      showSuccess("고정 항목 설정이 삭제되었습니다. 기존 거래 내역은 유지됩니다.");
+    }
+    renderRecurringItems();
+  } catch (error) {
+    console.error("Firestore에서 고정 항목 설정을 변경하지 못했습니다.", error);
+    showError("고정 항목 설정 변경에 실패했습니다");
+  }
+}
+
+function startEditingRecurringItem(itemId) {
+  const item = recurringItems.find((currentItem) => currentItem.id === itemId);
+  if (!item) return;
+  editingRecurringItemId = item.id;
+  recurringFormTitle.textContent = "고정 항목 수정";
+  recurringSubmitButton.textContent = "고정 항목 수정";
+  cancelRecurringEditButton.classList.remove("hidden");
+  recurringNameInput.value = item.name;
+  recurringTypeInput.value = item.type;
+  recurringKindInput.value = item.kind;
+  updateRecurringCategoryOptions(item.type, item.category);
+  recurringAmountInput.value = formatNumberWithCommas(item.amount);
+  recurringDayOfMonthInput.value = item.dayOfMonth;
+  recurringStartDateInput.value = item.startDate;
+  recurringMemoInput.value = item.memo;
+  recurringIsActiveInput.checked = item.isActive;
+  recurringNameInput.focus();
+}
+
+function resetRecurringItemForm() {
+  if (!recurringItemForm) return;
+  recurringItemForm.reset();
+  editingRecurringItemId = null;
+  recurringFormTitle.textContent = "새 고정 항목";
+  recurringSubmitButton.textContent = "고정 항목 추가";
+  cancelRecurringEditButton.classList.add("hidden");
+  recurringTypeInput.value = "expense";
+  recurringKindInput.value = "fixed";
+  recurringStartDateInput.value = getTodayString();
+  recurringIsActiveInput.checked = true;
+  updateRecurringCategoryOptions("expense");
 }
 
 async function handleTransactionAction(event) {
@@ -880,6 +1160,7 @@ async function handleOnlineStatusChange() {
 
   await syncOfflineTransactions();
   await hydrateTransactionsFromFirestore();
+  await hydrateRecurringItemsFromFirestore();
   syncMonthFilterOptions();
   render();
 }
@@ -1108,6 +1389,24 @@ async function hydrateTransactionsFromFirestore() {
   } catch (error) {
     console.error("Firestore에서 거래 데이터를 불러오지 못했습니다.", error);
     showError("\uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+  }
+}
+
+async function hydrateRecurringItemsFromFirestore() {
+  if (!currentUser) {
+    recurringItems = [];
+    return;
+  }
+
+  try {
+    const snapshot = await getDocs(getUserRecurringItemsCollection());
+    recurringItems = snapshot.docs
+      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+      .filter(isValidRecurringItemShape)
+      .map(normalizeRecurringItem);
+  } catch (error) {
+    console.error("Firestore에서 고정 항목 설정을 불러오지 못했습니다.", error);
+    showError("고정 항목 설정을 불러오지 못했습니다");
   }
 }
 
@@ -1437,6 +1736,32 @@ function normalizeTransaction(transaction) {
   return {
     ...transaction,
     isFixed: Boolean(transaction.isFixed),
+  };
+}
+
+function isValidRecurringItemShape(item) {
+  return (
+    item &&
+    typeof item.id === "string" &&
+    typeof item.name === "string" && item.name.trim().length > 0 &&
+    (item.type === "income" || item.type === "expense") &&
+    typeof item.amount === "number" && Number.isFinite(item.amount) && item.amount > 0 &&
+    typeof item.category === "string" &&
+    typeof item.memo === "string" &&
+    item.recurrence === "monthly" &&
+    Number.isInteger(item.dayOfMonth) && item.dayOfMonth >= 1 && item.dayOfMonth <= 31 &&
+    typeof item.isActive === "boolean" &&
+    (item.kind === "fixed" || item.kind === "subscription") &&
+    typeof item.startDate === "string"
+  );
+}
+
+function normalizeRecurringItem(item) {
+  return {
+    ...item,
+    name: item.name.trim(),
+    memo: item.memo.trim(),
+    isActive: Boolean(item.isActive),
   };
 }
 

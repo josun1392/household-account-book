@@ -100,7 +100,10 @@
           <p class="eyebrow" id="formEyebrow">내역 추가</p>
           <h2>거래 입력</h2>
         </div>
-        <p class="form-status hidden" id="formStatus">거래 수정 중</p>
+        <div class="heading-actions">
+          <p class="form-status hidden" id="formStatus">거래 수정 중</p>
+          <button type="button" class="secondary-button management-button" id="recurringItemsButton">고정 항목 관리</button>
+        </div>
       </div>
 
       <form id="transactionForm" class="transaction-form">
@@ -260,6 +263,43 @@
       <div class="modal-footer">
         <span class="modal-total-label">합계</span>
         <strong class="modal-total-value" id="modalTotal">-</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="recurringItemsModal" aria-hidden="true">
+    <div class="modal-card recurring-modal-card" role="dialog" aria-modal="true" aria-labelledby="recurringModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">고정 항목</p>
+          <h2 id="recurringModalTitle">고정 항목 관리</h2>
+          <p class="modal-description">이 설정은 앞으로의 반복 항목을 위한 것입니다. 기존 거래 내역은 변경되지 않습니다.</p>
+        </div>
+        <button type="button" class="modal-close-button" id="recurringModalCloseButton" aria-label="닫기">닫기</button>
+      </div>
+
+      <div class="modal-body recurring-modal-body">
+        <form id="recurringItemForm" class="recurring-item-form">
+          <div class="recurring-form-heading">
+            <h3 id="recurringFormTitle">새 고정 항목</h3>
+            <button type="button" class="edit-button hidden" id="cancelRecurringEditButton">수정 취소</button>
+          </div>
+          <label><span>이름</span><input type="text" id="recurringName" maxlength="60" required placeholder="예: 월세"></label>
+          <label><span>유형</span><select id="recurringType" required><option value="expense">지출</option><option value="income">수입</option></select></label>
+          <label><span>금액</span><input type="text" id="recurringAmount" inputmode="numeric" autocomplete="off" placeholder="0" required></label>
+          <label><span>카테고리</span><select id="recurringCategory" required></select></label>
+          <label><span>종류</span><select id="recurringKind" required><option value="fixed">일반 고정 항목</option><option value="subscription">구독</option></select></label>
+          <label><span>결제 / 발생일</span><input type="number" id="recurringDayOfMonth" min="1" max="31" inputmode="numeric" required placeholder="1~31"></label>
+          <label><span>시작일</span><input type="date" id="recurringStartDate" required></label>
+          <label class="memo-field"><span>메모</span><input type="text" id="recurringMemo" maxlength="120" placeholder="선택 입력"></label>
+          <label class="checkbox-field"><input type="checkbox" id="recurringIsActive" checked><span>활성 상태</span></label>
+          <div class="form-actions"><button type="submit" class="submit-button" id="recurringSubmitButton">고정 항목 추가</button></div>
+        </form>
+
+        <div class="recurring-list-section">
+          <div class="recurring-list-heading"><h3>등록된 항목</h3><span id="recurringItemCount" class="list-note">0개</span></div>
+          <div id="recurringItemsList" class="recurring-items-list"></div>
+        </div>
       </div>
     </div>
   </div>
