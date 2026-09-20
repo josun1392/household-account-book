@@ -401,7 +401,7 @@ export function createUiController({ budgetAPI }) {
     const button = event.target.closest("[data-recurring-action]"); if (!button) return;
     const item = uiState.currentSnapshot.recurringItems.find((current) => current.id === button.dataset.recurringId); if (!item) return;
     if (button.dataset.recurringAction === "edit") {
-      uiState.editingRecurringItemId = item.id; dom.recurringName.value = item.name; dom.recurringType.value = item.type; updateRecurringCategoryOptions(item.type, item.category); dom.recurringAmount.value = formatNumberWithCommas(item.amount); dom.recurringKind.value = item.kind; dom.recurringDayOfMonth.value = item.dayOfMonth; dom.recurringStartDate.value = item.startDate; dom.recurringMemo.value = item.memo ?? ""; dom.recurringRecordClassSavings.checked = item.recordClass === "savings"; dom.recurringIsActive.checked = item.isActive !== false; syncRecurringSavingsOptionVisibility(); dom.recurringSubmitButton.textContent = "고정 항목 수정"; dom.recurringCancelEditButton.classList.remove("hidden"); return;
+      uiState.editingRecurringItemId = item.id; dom.recurringName.value = item.name; dom.recurringType.value = item.type; updateRecurringCategoryOptions(item.type, item.category); dom.recurringAmount.value = formatNumberWithCommas(item.amount); dom.recurringKind.value = item.kind; dom.recurringDayOfMonth.value = item.dayOfMonth; dom.recurringStartDate.value = item.startDate; dom.recurringMemo.value = item.memo ?? ""; dom.recurringRecordClassSavings.checked = item.recordClass === "savings"; dom.recurringIsActive.checked = item.isActive !== false; syncRecurringSavingsOptionVisibility(); dom.recurringSubmitButton.textContent = "고정 항목 수정"; dom.recurringCancelEditButton.classList.remove("hidden"); dom.recurringModalBody.scrollTo({ top: 0, behavior: "smooth" }); window.setTimeout(() => dom.recurringName.focus(), 180); return;
     }
     if (button.dataset.recurringAction === "toggle") {
       budgetAPI.updateRecurringItem(item.id, { isActive: !item.isActive }).then((result) => { if (!result.ok) showMessage(result.reason ?? "상태 변경에 실패했습니다", "error"); }); return;
@@ -938,6 +938,7 @@ function getDomRefs() {
     submitButton: document.getElementById("submitButton"),
     cancelEditButton: document.getElementById("cancelEditButton"),
     recurringModal: document.getElementById("recurringModal"),
+    recurringModalBody: document.getElementById("recurringModalBody"),
     recurringModalCloseButton: document.getElementById("recurringModalCloseButton"),
     recurringItemForm: document.getElementById("recurringItemForm"),
     recurringName: document.getElementById("recurringName"),
