@@ -65,32 +65,47 @@
         </div>
       </div>
 
-      <div class="summary-grid" id="summary">
-        <article class="summary-card summary-card-income summary-card-button" data-summary-type="income" tabindex="0" role="button">
-          <span>총수입</span>
-          <strong id="totalIncome">-</strong>
-        </article>
-        <article class="summary-card summary-card-fixed summary-card-button" data-summary-type="fixedIncome" tabindex="0" role="button">
-          <span>총고정수입</span>
-          <strong id="totalFixedIncome">-</strong>
-        </article>
-        <article class="summary-card summary-card-expense summary-card-button" data-summary-type="expense" tabindex="0" role="button">
-          <span>총지출</span>
-          <strong id="totalExpense">-</strong>
-          <small class="summary-meta" id="fixedExpenseRatio">고정비 비율: -</small>
-        </article>
-        <article class="summary-card summary-card-balance summary-card-button" data-summary-type="balance" tabindex="0" role="button">
-          <span>잔액</span>
-          <strong id="balance">-</strong>
-        </article>
-        <article class="summary-card summary-card-fixed summary-card-button" data-summary-type="fixedExpense" tabindex="0" role="button">
-          <span>총고정지출</span>
-          <strong id="totalFixedExpense">-</strong>
-        </article>
-        <article class="summary-card summary-card-variable summary-card-button" data-summary-type="variableExpense" tabindex="0" role="button">
-          <span>총변동지출</span>
-          <strong id="totalVariableExpense">-</strong>
-        </article>
+      <div class="summary-groups" id="summary">
+        <div class="summary-group">
+          <p class="summary-group-label">핵심 요약</p>
+          <div class="summary-grid summary-grid-main">
+            <article class="summary-card summary-card-income summary-card-main summary-card-button" data-summary-type="income" tabindex="0" role="button">
+              <span>총수입</span>
+              <strong id="totalIncome">-</strong>
+            </article>
+            <article class="summary-card summary-card-expense summary-card-main summary-card-button" data-summary-type="expense" tabindex="0" role="button">
+              <span>총지출</span>
+              <strong id="totalExpense">-</strong>
+              <small class="summary-meta" id="fixedExpenseRatio">고정비 비율: -</small>
+            </article>
+            <article class="summary-card summary-card-savings summary-card-main summary-card-button" data-summary-type="savings" tabindex="0" role="button">
+              <span>총저축</span>
+              <strong id="totalSavings">-</strong>
+            </article>
+            <article class="summary-card summary-card-balance summary-card-main summary-card-balance-emphasis summary-card-button" data-summary-type="balance" tabindex="0" role="button">
+              <span>잔액</span>
+              <strong id="balance">-</strong>
+            </article>
+          </div>
+        </div>
+
+        <div class="summary-group">
+          <p class="summary-group-label">상세 분석</p>
+          <div class="summary-grid summary-grid-detail">
+            <article class="summary-card summary-card-fixed summary-card-detail summary-card-button" data-summary-type="fixedExpense" tabindex="0" role="button">
+              <span>총고정지출</span>
+              <strong id="totalFixedExpense">-</strong>
+            </article>
+            <article class="summary-card summary-card-variable summary-card-detail summary-card-button" data-summary-type="variableExpense" tabindex="0" role="button">
+              <span>총변동지출</span>
+              <strong id="totalVariableExpense">-</strong>
+            </article>
+            <article class="summary-card summary-card-fixed summary-card-detail summary-card-button" data-summary-type="fixedIncome" tabindex="0" role="button">
+              <span>총고정수입</span>
+              <strong id="totalFixedIncome">-</strong>
+            </article>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -100,9 +115,9 @@
           <p class="eyebrow" id="formEyebrow">내역 추가</p>
           <h2>거래 입력</h2>
         </div>
-        <div class="heading-actions">
+        <div class="section-heading-actions">
+          <button type="button" class="secondary-button" id="recurringManagementButton">고정 항목 관리</button>
           <p class="form-status hidden" id="formStatus">거래 수정 중</p>
-          <button type="button" class="secondary-button management-button" id="recurringItemsButton">고정 항목 관리</button>
         </div>
       </div>
 
@@ -138,10 +153,24 @@
           <input type="text" id="memo" name="memo" maxlength="120" placeholder="선택 입력">
         </label>
 
-        <label class="checkbox-field">
-          <input type="checkbox" id="isFixed" name="isFixed">
-          <span>고정 항목</span>
-        </label>
+        <div class="form-options-group">
+          <p class="form-options-title">추가 설정</p>
+
+          <div class="form-option">
+            <label class="checkbox-field">
+              <input type="checkbox" id="isFixed" name="isFixed">
+              <span>고정 항목 (매달 자동 생성)</span>
+            </label>
+          </div>
+
+          <div class="form-option" id="recordClassSavingsField">
+            <label class="checkbox-field">
+              <input type="checkbox" id="recordClassSavings" name="recordClassSavings">
+              <span>이 항목을 저축으로 분류</span>
+            </label>
+            <p class="checkbox-helper-text">소비가 아닌 저축으로 집계됩니다</p>
+          </div>
+        </div>
 
         <div class="form-actions">
           <button type="submit" class="submit-button" id="submitButton">거래 추가</button>
@@ -202,6 +231,7 @@
           <option value="all" selected>전체</option>
           <option value="income">수입</option>
           <option value="expense">지출</option>
+          <option value="savings">저축</option>
         </select>
       </label>
 
@@ -245,6 +275,8 @@
           <tbody id="transactionList"></tbody>
         </table>
       </div>
+
+      <div class="pagination hidden" id="pagination"></div>
     </section>
   </main>
 
@@ -267,40 +299,28 @@
     </div>
   </div>
 
-  <div class="modal-overlay hidden" id="recurringItemsModal" aria-hidden="true">
+  <div class="modal-overlay hidden" id="recurringModal" aria-hidden="true">
     <div class="modal-card recurring-modal-card" role="dialog" aria-modal="true" aria-labelledby="recurringModalTitle">
       <div class="modal-header">
-        <div>
-          <p class="eyebrow">고정 항목</p>
-          <h2 id="recurringModalTitle">고정 항목 관리</h2>
-          <p class="modal-description">이 설정은 앞으로의 반복 항목을 위한 것입니다. 기존 거래 내역은 변경되지 않습니다.</p>
-        </div>
+        <div><p class="eyebrow">매달 자동 생성</p><h2 id="recurringModalTitle">고정 항목 관리</h2></div>
         <button type="button" class="modal-close-button" id="recurringModalCloseButton" aria-label="닫기">닫기</button>
       </div>
-
-      <div class="modal-body recurring-modal-body">
-        <form id="recurringItemForm" class="recurring-item-form">
-          <div class="recurring-form-heading">
-            <h3 id="recurringFormTitle">새 고정 항목</h3>
-            <button type="button" class="edit-button hidden" id="cancelRecurringEditButton">수정 취소</button>
-          </div>
-          <label><span>이름</span><input type="text" id="recurringName" maxlength="60" required placeholder="예: 월세"></label>
-          <label><span>유형</span><select id="recurringType" required><option value="expense">지출</option><option value="income">수입</option></select></label>
-          <label><span>금액</span><input type="text" id="recurringAmount" inputmode="numeric" autocomplete="off" placeholder="0" required></label>
-          <label><span>카테고리</span><select id="recurringCategory" required></select></label>
-          <label><span>종류</span><select id="recurringKind" required><option value="fixed">일반 고정 항목</option><option value="subscription">구독</option></select></label>
-          <label><span>결제 / 발생일</span><input type="number" id="recurringDayOfMonth" min="1" max="31" inputmode="numeric" required placeholder="1~31"></label>
-          <label><span>시작일</span><input type="date" id="recurringStartDate" required></label>
-          <label class="memo-field"><span>메모</span><input type="text" id="recurringMemo" maxlength="120" placeholder="선택 입력"></label>
-          <label class="checkbox-field"><input type="checkbox" id="recurringIsActive" checked><span>활성 상태</span></label>
-          <div class="form-actions"><button type="submit" class="submit-button" id="recurringSubmitButton">고정 항목 추가</button></div>
-        </form>
-
-        <div class="recurring-list-section">
-          <div class="recurring-list-heading"><h3>등록된 항목</h3><span id="recurringItemCount" class="list-note">0개</span></div>
-          <div id="recurringItemsList" class="recurring-items-list"></div>
-        </div>
-      </div>
+      <form id="recurringItemForm" class="recurring-item-form">
+        <input type="hidden" id="recurringItemId">
+        <label><span>이름</span><input id="recurringName" required maxlength="80" placeholder="예: 넷플릭스"></label>
+        <label><span>유형</span><select id="recurringType"><option value="expense">지출</option><option value="income">수입</option></select></label>
+        <label><span>금액</span><input id="recurringAmount" inputmode="numeric" required placeholder="0"></label>
+        <label><span>카테고리</span><select id="recurringCategory"></select></label>
+        <label><span>종류</span><select id="recurringKind"><option value="fixed">일반 고정 항목</option><option value="subscription">구독</option></select></label>
+        <label><span>결제 / 발생일</span><input id="recurringDayOfMonth" type="number" min="1" max="31" required></label>
+        <label><span>시작일</span><input id="recurringStartDate" type="date" required></label>
+        <label class="memo-field"><span>메모</span><input id="recurringMemo" maxlength="120" placeholder="선택 입력"></label>
+        <label class="checkbox-field recurring-record-class-field" id="recurringRecordClassSavingsField"><input id="recurringRecordClassSavings" type="checkbox"><span>이 항목을 저축으로 분류</span></label>
+        <label class="checkbox-field recurring-active-field"><input id="recurringIsActive" type="checkbox" checked><span>활성 상태</span></label>
+        <div class="form-actions"><button type="submit" class="submit-button" id="recurringSubmitButton">고정 항목 추가</button><button type="button" class="secondary-button hidden" id="recurringCancelEditButton">수정 취소</button></div>
+      </form>
+      <p class="recurring-history-note">설정을 수정하거나 삭제해도 기존 거래 내역은 유지됩니다.</p>
+      <div id="recurringItemList" class="recurring-item-list"></div>
     </div>
   </div>
 

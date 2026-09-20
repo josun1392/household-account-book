@@ -1,0 +1,6 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": ["firebase.json", ".firebaserc", ".git/**", "**/node_modules/**", "가계부.zip"]
+  }
+}
