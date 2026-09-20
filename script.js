@@ -1,6 +1,6 @@
 ﻿import { initializeApp as initializeFirebaseApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, runTransaction, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const USERS_COLLECTION = "users";
 const TRANSACTIONS_COLLECTION = "transactions";
 const RECURRING_ITEMS_COLLECTION = "recurringItems";
@@ -127,6 +127,7 @@ let recurringItems = [];
 let editingTransactionId = null;
 let editingRecurringItemId = null;
 let isSyncingOfflineTransactions = false;
+let isMaterializingRecurringOccurrences = false;
 let messageTimeoutId = null;
 let syncStatusTimeoutId = null;
 let currentTypeFilter = "all";
@@ -166,6 +167,10 @@ async function initializeBudgetApp() {
   if (navigator.onLine) {
     await syncOfflineTransactions();
     await hydrateTransactionsFromFirestore();
+    const materializationResult = await materializeDueRecurringOccurrences();
+    if (materializationResult.createdCount > 0) {
+      await hydrateTransactionsFromFirestore();
+    }
   }
   syncMonthFilterOptions();
   setPeriodValue("all", { closePanel: false, skipRender: true });
@@ -370,6 +375,11 @@ async function handleSubmit(event) {
     isFixed: isFixedInput.checked,
     userId: existingTransaction?.userId ?? getCurrentUserId(),
     ...(clientId ? { clientId } : {}),
+    ...(existingTransaction?.source ? {
+      source: existingTransaction.source,
+      ...(typeof existingTransaction.recurringItemId === "string" ? { recurringItemId: existingTransaction.recurringItemId } : {}),
+      ...(typeof existingTransaction.occurrenceKey === "string" ? { occurrenceKey: existingTransaction.occurrenceKey } : {}),
+    } : {}),
   };
 
   if (!navigator.onLine) {
@@ -457,7 +467,7 @@ function handleTransactionSortChange() {
 
 function handleExportCsv() {
   const rows = getExportRows();
-  const header = ["id", "clientId", "date", "type", "amount", "category", "memo", "isFixed"];
+  const header = ["id", "clientId", "date", "type", "amount", "category", "memo", "isFixed", "source", "recurringItemId", "occurrenceKey"];
   const csvContent = [
     header.join(","),
     ...rows.map((row) => header.map((field) => escapeCsvValue(row[field])).join(",")),
@@ -1161,6 +1171,10 @@ async function handleOnlineStatusChange() {
   await syncOfflineTransactions();
   await hydrateTransactionsFromFirestore();
   await hydrateRecurringItemsFromFirestore();
+  const materializationResult = await materializeDueRecurringOccurrences();
+  if (materializationResult.createdCount > 0) {
+    await hydrateTransactionsFromFirestore();
+  }
   syncMonthFilterOptions();
   render();
 }
@@ -1408,6 +1422,153 @@ async function hydrateRecurringItemsFromFirestore() {
     console.error("Firestore에서 고정 항목 설정을 불러오지 못했습니다.", error);
     showError("고정 항목 설정을 불러오지 못했습니다");
   }
+}
+
+async function materializeDueRecurringOccurrences() {
+  const emptyResult = { createdCount: 0, failureCount: 0 };
+  if (!currentUser || !navigator.onLine || isMaterializingRecurringOccurrences) {
+    return emptyResult;
+  }
+
+  isMaterializingRecurringOccurrences = true;
+  const existingOccurrenceKeys = new Set(
+    transactions
+      .filter((transaction) => (
+        transaction.source === "recurringItem" &&
+        typeof transaction.recurringItemId === "string" &&
+        typeof transaction.occurrenceKey === "string"
+      ))
+      .map((transaction) => getRecurringOccurrenceIdentity(transaction.recurringItemId, transaction.occurrenceKey)),
+  );
+  const result = { createdCount: 0, failureCount: 0 };
+
+  try {
+    for (const recurringItem of recurringItems) {
+      if (!isValidRecurringItemShape(recurringItem) || !recurringItem.isActive) {
+        continue;
+      }
+
+      for (const occurrence of getDueMonthlyOccurrences(recurringItem)) {
+        const occurrenceIdentity = getRecurringOccurrenceIdentity(recurringItem.id, occurrence.occurrenceKey);
+        if (existingOccurrenceKeys.has(occurrenceIdentity)) {
+          continue;
+        }
+
+        try {
+          const didCreate = await createRecurringOccurrenceIfMissing(recurringItem, occurrence);
+          if (didCreate) {
+            result.createdCount += 1;
+          }
+          existingOccurrenceKeys.add(occurrenceIdentity);
+        } catch (error) {
+          result.failureCount += 1;
+          console.error("반복 고정 항목 발생 내역을 저장하지 못했습니다.", {
+            recurringItemId: recurringItem.id,
+            occurrenceKey: occurrence.occurrenceKey,
+            error,
+          });
+        }
+      }
+    }
+
+    if (result.failureCount > 0) {
+      showError("일부 반복 고정 항목을 거래 내역으로 저장하지 못했습니다");
+    }
+    return result;
+  } finally {
+    isMaterializingRecurringOccurrences = false;
+  }
+}
+
+async function createRecurringOccurrenceIfMissing(recurringItem, occurrence) {
+  const transactionId = getRecurringOccurrenceTransactionId(recurringItem.id, occurrence.occurrenceKey);
+  const transactionRef = getUserTransactionDocRef(transactionId);
+  const transaction = {
+    id: transactionId,
+    clientId: transactionId,
+    date: occurrence.date,
+    type: recurringItem.type,
+    amount: recurringItem.amount,
+    category: recurringItem.category,
+    memo: recurringItem.memo,
+    isFixed: true,
+    userId: getCurrentUserId(),
+    source: "recurringItem",
+    recurringItemId: recurringItem.id,
+    occurrenceKey: occurrence.occurrenceKey,
+  };
+
+  return runTransaction(db, async (firestoreTransaction) => {
+    const existingDocument = await firestoreTransaction.get(transactionRef);
+    if (existingDocument.exists()) {
+      return false;
+    }
+
+    firestoreTransaction.set(transactionRef, getFirestoreTransactionPayload(transaction));
+    return true;
+  });
+}
+
+function getDueMonthlyOccurrences(recurringItem, today = getTodayString()) {
+  if (!isValidRecurringItemShape(recurringItem) || !recurringItem.isActive || recurringItem.recurrence !== "monthly") {
+    return [];
+  }
+
+  const startDateParts = parseIsoDate(recurringItem.startDate);
+  const todayParts = parseIsoDate(today);
+  if (!startDateParts || !todayParts || recurringItem.startDate > today) {
+    return [];
+  }
+
+  const occurrences = [];
+  let year = startDateParts.year;
+  let month = startDateParts.month;
+  while (year < todayParts.year || (year === todayParts.year && month <= todayParts.month)) {
+    const date = getMonthlyOccurrenceDate(year, month, recurringItem.dayOfMonth);
+    if (date >= recurringItem.startDate && date <= today) {
+      occurrences.push({ occurrenceKey: `${year}-${String(month).padStart(2, "0")}`, date });
+    }
+
+    month += 1;
+    if (month === 13) {
+      year += 1;
+      month = 1;
+    }
+  }
+
+  return occurrences;
+}
+
+function parseIsoDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const [year, month, day] = value.split("-").map(Number);
+  const lastDay = getLastCalendarDayOfMonth(year, month);
+  if (month < 1 || month > 12 || day < 1 || day > lastDay) {
+    return null;
+  }
+
+  return { year, month, day };
+}
+
+function getMonthlyOccurrenceDate(year, month, dayOfMonth) {
+  const finalDayOfMonth = getLastCalendarDayOfMonth(year, month);
+  const occurrenceDay = Math.min(dayOfMonth, finalDayOfMonth);
+  return `${year}-${String(month).padStart(2, "0")}-${String(occurrenceDay).padStart(2, "0")}`;
+}
+
+function getLastCalendarDayOfMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function getRecurringOccurrenceIdentity(recurringItemId, occurrenceKey) {
+  return `${recurringItemId}:${occurrenceKey}`;
+}
+
+function getRecurringOccurrenceTransactionId(recurringItemId, occurrenceKey) {
+  return `recurring-${recurringItemId}-${occurrenceKey}`;
 }
 
 function loadLegacyTransactionsFromLocalStorage() {
@@ -1720,6 +1881,11 @@ function calculateSummaryTotals(items) {
 }
 
 function isValidTransactionShape(transaction) {
+  const hasValidRecurringProvenance = transaction.source === undefined || (
+    transaction.source === "recurringItem" &&
+    typeof transaction.recurringItemId === "string" &&
+    typeof transaction.occurrenceKey === "string"
+  );
   return (
     transaction &&
     typeof transaction.id === "string" &&
@@ -1728,7 +1894,8 @@ function isValidTransactionShape(transaction) {
     typeof transaction.amount === "number" &&
     typeof transaction.category === "string" &&
     typeof transaction.memo === "string" &&
-    (typeof transaction.isFixed === "boolean" || typeof transaction.isFixed === "undefined")
+    (typeof transaction.isFixed === "boolean" || typeof transaction.isFixed === "undefined") &&
+    hasValidRecurringProvenance
   );
 }
 
@@ -1807,6 +1974,9 @@ function getExportRows() {
     category: transaction.category ?? "",
     memo: transaction.memo ?? "",
     isFixed: Boolean(transaction.isFixed),
+    source: transaction.source ?? "",
+    recurringItemId: transaction.recurringItemId ?? "",
+    occurrenceKey: transaction.occurrenceKey ?? "",
   }));
 }
 
